@@ -2,7 +2,7 @@ Param(
     [Parameter(Mandatory = $true)]
     [string] $DefinitionsRootFolder,
 
-    [ValidateSet("ALZ", "AMBA")]
+    [ValidateSet("ALZ", "AMBA", "FSI", "SLZ")]
     [string] $Type = "ALZ",
  
     [Parameter(Mandatory = $true)]
@@ -20,7 +20,7 @@ Param(
 if ($Tag -eq "") {
     switch ($Type) {
         'ALZ' {
-            $Tag = "platform/alz/2025.02.0"
+            $Tag = "platform/alz/2025.09.3"
         }
         'FSI' {
             $Tag = "platform/fsi/2025.03.0"
@@ -29,7 +29,7 @@ if ($Tag -eq "") {
             $Tag = "platform/amba/2025.07.0"
         }
         'SLZ' {
-            $Tag = "platform/slz/2025.03.0"
+            $Tag = "platform/slz/2025.10.1"
         }
     }
 }
@@ -120,6 +120,18 @@ foreach ($file in Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/
     }
     $baseTemplate.properties.policyDefinitions = $policyDefinitions
 
+    # Force property order
+    $orderedProps = [ordered]@{
+        description            = $baseTemplate.properties.description
+        displayName            = $baseTemplate.properties.displayName
+        metadata               = $baseTemplate.properties.metadata
+        parameters             = $baseTemplate.properties.parameters
+        policyDefinitions      = $baseTemplate.properties.policyDefinitions
+        policyType             = $baseTemplate.properties.policyType
+        policyDefinitionGroups = $baseTemplate.properties.policyDefinitionGroups
+    }
+    $baseTemplate.properties = $orderedProps
+
     $category = $baseTemplate.properties.Metadata.category
     ([PSCustomObject]$baseTemplate | Select-Object -Property "`$schema", name, properties | ConvertTo-Json -Depth 50) -replace "\[\[", "[" `
         -replace "variables\('scope'\)", "'/providers/Microsoft.Management/managementGroups/$managementGroupId'" `
@@ -154,10 +166,12 @@ catch {
 try {
     foreach ($file in Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/archetype_definitions" -Recurse -File -Include *.json) {
         $archetypeContent = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
-        foreach ($requiredAssignment in $archetypeContent.policy_assignments) {
+        foreach ($requiredAssignment in ($archetypeContent.policy_assignments | Where-Object { ($_ -notmatch "^Enforce-(GR|Encrypt)-\w+0") })) {
             switch ($Type) {
                 "ALZ" { $fileContent = Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/policy_assignments" | Where-Object { $_.BaseName.Split(".")[0] -eq $requiredAssignment } | Get-Content -Raw | ConvertFrom-Json }
                 "AMBA" { $fileContent = Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/policy_assignments" | Where-Object { $_.BaseName.Split(".")[0].Replace("_", "-") -eq $requiredAssignment } | Get-Content -Raw | ConvertFrom-Json }
+                "SLZ" { $fileContent = Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/policy_assignments" | Where-Object { $_.BaseName.Split(".")[0].Replace("_", "-") -eq $requiredAssignment } | Get-Content -Raw | ConvertFrom-Json }
+                "FSI" { $fileContent = Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/policy_assignments" | Where-Object { $_.BaseName.Split(".")[0].Replace("_", "-") -eq $requiredAssignment } | Get-Content -Raw | ConvertFrom-Json }
                 default { $fileContent = Get-ChildItem -Path "$LibraryPath/platform/$($Type.ToLower())/policy_assignments" | Where-Object { $_.BaseName.Split(".")[0] -eq $requiredAssignment } | Get-Content -Raw | ConvertFrom-Json }
             }
         
@@ -207,10 +221,28 @@ try {
             if ($scopeTrim -eq "landing_zones") {
                 $scopeTrim = "landingzones"
             }
-            $scope = [ordered]@{
-                $PacEnvironmentSelector = @(
-                    $structureFile.managementGroupNameMappings.$scopeTrim.value
-                )
+            if ($scopeTrim -eq "global") {
+                $scopeTrim = "mcfs"
+            }
+            if ($Type -eq "FSI" -and $scopeTrim -ne "confidential") {
+                $scopeTrim = "fsi"
+            }
+            if ($scopeTrim -eq "confidential") {
+                $scopes = foreach ($key in $structureFile.managementGroupNameMappings.psObject.Properties.Name) {
+                    if ($structureFile.managementGroupNameMappings.$key.management_group_function -match $scopeTrim) {
+                        $structureFile.managementGroupNameMappings.$key.value
+                    }
+                }
+                $scope = [ordered]@{
+                    $PacEnvironmentSelector = $scopes
+                }
+            }
+            else {
+                $scope = [ordered]@{
+                    $PacEnvironmentSelector = @(
+                        $structureFile.managementGroupNameMappings.$scopeTrim.value
+                    )
+                }
             }
             $baseTemplate.Add("scope", $scope)
 
@@ -277,14 +309,14 @@ try {
     if ($CreateGuardrailAssignments -and $Type -eq "ALZ") {
         foreach ($deployment in $structureFile.enforceGuardrails.deployments) {
             foreach ($file in Get-ChildItem "$LibraryPath/platform/$($Type.ToLower())/policy_set_definitions" -Recurse -File -Include *.json) {
-                if (($file.Name -match "^Enforce-Guardrails") -and ($file.Name.Split(".")[0] -in $deployment.policy_set_names)) {
+                if (($file.Name -match "^Enforce-(Guardrails|Encryption)-") -and ($file.Name.Split(".")[0] -in $deployment.policy_set_names)) {
                     $fileContent = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json -Depth 100
 
                     $baseTemplate = [ordered]@{
                         "`$schema"      = "https://raw.githubusercontent.com/Azure/enterprise-azure-policy-as-code/main/Schemas/policy-assignment-schema.json"
                         nodeName        = "$($fileContent.name)"
                         assignment      = [ordered]@{
-                            name        = $fileContent.Name -replace "Enforce-Guardrails", "GR"
+                            name        = $fileContent.Name -replace "Enforce-Guardrails", "GR" -replace "Enforce-Encryption", "EN"
                             displayName = $fileContent.properties.displayName
                             description = $fileContent.properties.description
                         }

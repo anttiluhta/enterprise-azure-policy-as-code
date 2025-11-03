@@ -32,7 +32,7 @@ if ($DefinitionsRootFolder -eq "") {
 if ($Tag -eq "") {
     switch ($Type) {
         'ALZ' {
-            $Tag = "platform/alz/2025.02.0"
+            $Tag = "platform/alz/2025.09.3"
         }
         'FSI' {
             $Tag = "platform/fsi/2025.03.0"
@@ -41,7 +41,7 @@ if ($Tag -eq "") {
             $Tag = "platform/amba/2025.05.0"
         }
         'SLZ' {
-            $Tag = "platform/slz/2025.03.0"
+            $Tag = "platform/slz/2025.10.1"
         }
     }
 }
@@ -149,11 +149,17 @@ foreach ($parameter in $policyDefaults) {
         $assignment = $parameter.policy_assignments[0]
 
         $assignmentFileName = ("$($assignment.policy_assignment_name).alz_policy_assignment.json")
-        if ($Type -eq "AMBA") {
+        if ($Type -in ("AMBA", "SLZ", "FSI")) {
             $assignmentFileName = $assignmentFileName -replace ("-", "_")
         }
         $file = Get-ChildItem -Recurse -Path $LibraryPath -Filter "$assignmentFileName" -File | Select-Object -First 1
-        $jsonContent = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+        try {
+            $jsonContent = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+        }
+        catch {
+            Write-Warning "Could not find assignment file: $assignmentFileName"
+            continue
+        }
         $tempDefaultParamValue = $jsonContent.properties.parameters.$parameterAssignmentName.value
     
         $obj = @(
@@ -180,7 +186,13 @@ foreach ($parameter in $policyDefaults) {
                 $assignmentFileName = $assignmentFileName -replace ("-", "_")
             }
             $file = Get-ChildItem -Recurse -Path $LibraryPath -Filter "$assignmentFileName" -File | Select-Object -First 1
-            $jsonContent = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+            try {
+                $jsonContent = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+            }
+            catch {
+                Write-Warning "Could not find assignment file: $assignmentFileName"
+                continue
+            }
             $tempDefaultParamValue = $jsonContent.properties.parameters.$parameterAssignmentName.value
     
             $obj = @(
@@ -202,7 +214,7 @@ foreach ($parameter in $policyDefaults) {
 # Build Guardrail Deployment Object
 
 if ($Type -eq "ALZ") {
-    $guardRailPolicyFileNames = Get-ChildItem $LibraryPath\platform\$($Type.ToLower())\policy_set_definitions\*.json | Where-Object { $_.Name -match "^Enforce-Guardrails-" } | Select-Object -ExpandProperty Name
+    $guardRailPolicyFileNames = Get-ChildItem $LibraryPath\platform\$($Type.ToLower())\policy_set_definitions\*.json | Where-Object { ($_.Name -match "^Enforce-(Guardrails|Encryption)-") } | Select-Object -ExpandProperty Name
     $policySetNames = $guardRailPolicyFileNames | Foreach-Object { $_.Split(".")[0] }
     $obj = @{
         policy_set_names = $policySetNames
