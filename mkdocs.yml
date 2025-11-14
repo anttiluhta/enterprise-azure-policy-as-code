@@ -3,8 +3,8 @@ site_url: https://azure.github.io/enterprise-azure-policy-as-code/
 repo_url: https://github.com/Azure/enterprise-azure-policy-as-code
 docs_dir: Docs
 theme:
-  logo: Images/10316-icon-service-Policy.svg
-  favicon: Images/10316-icon-service-Policy.svg
+  logo: Images/epac_svg.svg
+  favicon: Images/epac_svg.svg
   language: en
   name: material
   font:
@@ -36,10 +36,10 @@ nav:
       - Global Settings: settings-global-setting-file.md
       - Desired State: settings-desired-state.md
       - DfC Assignments: settings-dfc-assignments.md
+      - Output Themes: settings-output-themes.md
   - Azure Landing Zones:
       - ALZ Overview: integrating-with-alz-overview.md
-      - ALZ Policy Integration (New): integrating-with-alz-library.md
-      - ALZ Policy Integration (Legacy): integrating-with-alz.md
+      - ALZ Policy Integration: integrating-with-alz-library.md
   - Define Policy Resources:
       - Policy Definitions: policy-definitions.md
       - Policy Set Definitions: policy-set-definitions.md
